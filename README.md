@@ -77,20 +77,41 @@ cd yay
 vpn makepkg -si  # ✅ Success!
 ```
 
-### Install Official Package
+Here's the cleaned-up version for your README:
+
+---
+
+## 🌐 **VPN Setup in Brave Browser**
+
+### 1. Install v2rayA
 ```bash
-vpn sudo pacman -S v2raya
+vpn yay -S v2raya-bin
+vpn sudo systemctl enable --now v2raya
 ```
 
-### Clone Repository
+### 2. Open v2rayA GUI
 ```bash
-vpn git clone https://github.com/hishamcyber/finpal.git
+http://localhost:2017
 ```
+Import your subscription servers and start the proxy.
 
-### Check Your IP
-```bash
-vpn curl ifconfig.me  # Shows VPN IP
+### 3. Install Proxy Extension
+Open Brave and go to:
 ```
+vpn brave https://chromewebstore.google.com/detail/proxy-switcher/icpgekloenpkdgbbjnmjddbcmjglflkj
+```
+Click **"Add to Brave"**.
+
+### 4. Configure Extension
+- Click the extension icon → **"Options"**
+- Create a new profile:
+  - **Name:** `v2rayA`
+  - **Protocol:** `SOCKS5`
+  - **Server:** `127.0.0.1`
+  - **Port:** `20170`
+- Click **"Connect"**
+
+**Now you have VPN in Brave!** 🔒
 
 ---
 
@@ -126,7 +147,7 @@ sudo pacman -S shadowsocks-rust python3
 ## ❓ FAQ
 
 **Q: How do I get a subscription link?**  
-A: Sign up with a Shadowsocks provider.
+A: Sign up with a Shadowsocks provider. (ikuuu.win, etc)
 
 **Q: Why use `-bin` packages?**  
 A: Pre-compiled binaries install faster and more reliably.
