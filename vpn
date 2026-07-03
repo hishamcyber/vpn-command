@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+import sys, os, base64, subprocess, time, urllib.request, urllib.parse, socket, concurrent.futures
+
+CONF_DIR = os.path.expanduser("~/.config/vpnrun")
+NODES_FILE = os.path.join(CONF_DIR, "nodes.txt")
+PID_FILE = os.path.join(CONF_DIR, "sslocal.pid")
+SELECTED_FILE = os.path.join(CONF_DIR, "selected.txt")
+PORT = 1080
+
+os.makedirs(CONF_DIR, exist_ok=True)
+
+def save_link(url):
+    data = urllib.request.urlopen(url, timeout=15).read()
+    try:
+        decoded = base64.b64decode(data + b"===")
+    except Exception:
+        decoded = data
+    with open(NODES_FILE, "wb") as f:
+        f.write(decoded)
+    print(f"Saved {len(decoded.splitlines())} server(s).")
+
+def parse_ss(line):
+    line = line.strip()
+    if not line.startswith("ss://"):
+        return None
+    body = line[5:]
+    tag = ""
+    if "#" in body:
+        body, tag = body.split("#", 1)
+        tag = urllib.parse.unquote(tag)
+    try:
+        if "@" in body:
+            userinfo, hostport = body.split("@", 1)
+            hostport = hostport.split("?")[0]
+            userinfo = urllib.parse.unquote(userinfo)
+            pad = "=" * (-len(userinfo) % 4)
+            method_pass = base64.b64decode(userinfo + pad).decode()
+            method, password = method_pass.split(":", 1)
+            host, port = hostport.rsplit(":", 1)
+        else:
+            body = body.split("?")[0]
+            pad = "=" * (-len(body) % 4)
+            decoded = base64.b64decode(body + pad).decode()
+            method_pass, hostport = decoded.rsplit("@", 1)
+            method, password = method_pass.split(":", 1)
+            host, port = hostport.rsplit(":", 1)
+    except Exception:
+        return None
+    return {"method": method, "password": password, "host": host, "port": int(port), "tag": tag or host}
+
+def load_all():
+    if not os.path.exists(NODES_FILE):
+        print("No servers saved yet. Run: vpn <subscription_link>")
+        sys.exit(1)
+    nodes = []
+    with open(NODES_FILE) as f:
+        for line in f:
+            n = parse_ss(line)
+            if n:
+                nodes.append(n)
+    if not nodes:
+        print("No valid ss:// servers found.")
+        sys.exit(1)
+    return nodes
+
+def ping_node(node, timeout=3):
+    start = time.time()
+    try:
+        with socket.create_connection((node["host"], node["port"]), timeout=timeout):
+            return (time.time() - start) * 1000
+    except Exception:
+        return None
+
+def list_servers():
+    nodes = load_all()
+    for i, n in enumerate(nodes):
+        print(f"{i}) {n['tag']}  ({n['host']}:{n['port']})")
+
+def test_servers():
+    nodes = load_all()
+    print(f"Testing {len(nodes)} servers...")
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
+        futures = {ex.submit(ping_node, n): n for n in nodes}
+        for fut in concurrent.futures.as_completed(futures):
+            n = futures[fut]
+            latency = fut.result()
+            if latency is not None:
+                results.append((latency, n))
+    results.sort(key=lambda x: x[0])
+    for latency, n in results:
+        print(f"{latency:6.0f} ms  {n['tag']}  ({n['host']}:{n['port']})")
+    return results
+
+def select_fastest():
+    results = test_servers()
+    if not results:
+        print("No reachable servers.")
+        sys.exit(1)
+    best = results[0][1]
+    save_selected(best)
+    print(f"\nSelected fastest: {best['tag']} ({results[0][0]:.0f} ms)")
+
+def save_selected(node):
+    with open(SELECTED_FILE, "w") as f:
+        f.write(f"{node['method']}\t{node['password']}\t{node['host']}\t{node['port']}\t{node['tag']}\n")
+
+def select_index(idx):
+    nodes = load_all()
+    if idx < 0 or idx >= len(nodes):
+        print("Invalid index.")
+        sys.exit(1)
+    save_selected(nodes[idx])
+    print(f"Selected: {nodes[idx]['tag']}")
+
+def get_selected():
+    if not os.path.exists(SELECTED_FILE):
+        nodes = load_all()
+        save_selected(nodes[0])
+    with open(SELECTED_FILE) as f:
+        method, password, host, port, tag = f.read().strip().split("\t")
+    return {"method": method, "password": password, "host": host, "port": int(port), "tag": tag}
+
+def proxy_running():
+    if not os.path.exists(PID_FILE):
+        return False
+    try:
+        pid = int(open(PID_FILE).read().strip())
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+def start_proxy():
+    if proxy_running():
+        return
+    node = get_selected()
+    proc = subprocess.Popen([
+        "sslocal", "-s", f"{node['host']}:{node['port']}",
+        "-m", node["method"], "-k", node["password"],
+        "-b", f"127.0.0.1:{PORT}"
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    with open(PID_FILE, "w") as f:
+        f.write(str(proc.pid))
+    time.sleep(2)
+    print(f"Proxy started via {node['tag']}")
+
+def run_with_proxy(cmd):
+    start_proxy()
+    env = os.environ.copy()
+    proxy_url = f"socks5://127.0.0.1:{PORT}"
+    env["http_proxy"] = proxy_url
+    env["https_proxy"] = proxy_url
+    env["all_proxy"] = proxy_url
+    subprocess.call(cmd, env=env)
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage:")
+        print("  vpn <subscription_link>   save servers")
+        print("  vpn --list                list servers")
+        print("  vpn --test                ping all, show speed")
+        print("  vpn --fastest             auto-pick fastest")
+        print("  vpn --select <index>      pick server by number")
+        print("  vpn <command...>          run command through proxy")
+        sys.exit(1)
+
+    first = sys.argv[1]
+    if first.startswith("http://") or first.startswith("https://"):
+        save_link(first)
+    elif first == "--list":
+        list_servers()
+    elif first == "--test":
+        test_servers()
+    elif first == "--fastest":
+        select_fastest()
+    elif first == "--select":
+        select_index(int(sys.argv[2]))
+    else:
+        run_with_proxy(sys.argv[1:])
+
+if __name__ == "__main__":
+    main()
