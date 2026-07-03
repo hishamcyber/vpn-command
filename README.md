@@ -18,8 +18,26 @@ In China, the Great Firewall (GFW) blocks:
 ## 📦 Quick Install
 
 ```bash
-sudo curl -o /usr/local/bin/vpn https://raw.githubusercontent.com/hishamcyber/vpn-command/main/vpn && sudo chmod +x /usr/local/bin/vpn
-sudo pacman -S shadowsocks-rust python3
+# Step 1: Install dependencies
+sudo pacman -S shadowsocks-rust python3 curl
+
+# Step 2: Download the script
+sudo curl -o /usr/local/bin/vpn https://raw.githubusercontent.com/hishamcyber/vpn-command/main/vpn
+
+# Step 3: Make it executable
+sudo chmod +x /usr/local/bin/vpn
+
+# Step 4: Verify installation
+vpn
+
+# Step 5: Save your subscription
+vpn "https://your-subscription-link-here"
+
+# Step 6: Find the fastest server
+vpn --fastest
+
+# Step 7: Start using it!
+vpn yay -S google-chrome
 ```
 
 Now use `vpn` as a command:
