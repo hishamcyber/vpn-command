@@ -1,0 +1,17 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Config files (don't expose your servers)
+*.txt
+*.pid
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# MacOS files
+.DS_Store
